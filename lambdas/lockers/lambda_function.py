@@ -18,24 +18,32 @@ def lambda_handler(event, context):
     if http_method == 'OPTIONS':
         return db_utils.format_response(200, {})
 
+    # 1. Ver Lockers Disponibles
     if 'available' in path and http_method == 'GET':
         return get_available_lockers()
+    
+    # 2. Asignar Locker
     elif 'assign' in path and http_method == 'POST':
         return assign_locker(event)
+    
+    # 3. Rutas de "Mi Locker"
     elif 'my-locker' in path: 
-        # Sub-rutas
+        # Refrescar OTP
         if 'otp/refresh' in path and http_method == 'POST':
             return refresh_otp(event)
+        # Cancelar Locker (NUEVO)
         elif 'request-cancel' in path and http_method == 'POST':
             return request_cancel(event)
+        # Pedir más tiempo (NUEVO)
         elif 'request-time-change' in path and http_method == 'POST':
             return request_time_change(event)
+        # Ver mi locker
         elif http_method == 'GET':
             return get_my_locker(event)
     
     return db_utils.format_response(404, {'message': 'Ruta lockers no encontrada'})
 
-# --- AUXILIARES ---
+# --- FUNCIONES AUXILIARES ---
 def generate_otp():
     otp = str(random.randint(100000, 999999))
     salt = os.urandom(16).hex()
@@ -160,7 +168,8 @@ def assign_locker(event):
             conn.commit()
             return db_utils.format_response(200, {'message': 'Asignado', 'initial_otp': otp_plain})
     except Exception as e: return db_utils.format_response(500, {'error': str(e)})
-    finally: if 'conn' in locals(): conn.close()
+    finally: 
+        if 'conn' in locals(): conn.close()
 
 def get_my_locker(event):
     try:
@@ -175,4 +184,5 @@ def get_my_locker(event):
             if not locker: return db_utils.format_response(404, {'message': 'Sin locker'})
             return db_utils.format_response(200, locker)
     except Exception as e: return db_utils.format_response(500, {'error': str(e)})
-    finally: if 'conn' in locals(): conn.close()
+    finally: 
+        if 'conn' in locals(): conn.close()
