@@ -18,62 +18,123 @@ def lambda_handler(event, context):
     if http_method == 'OPTIONS':
         return db_utils.format_response(200, {})
 
+    # Rutas existentes
     if 'available' in path and http_method == 'GET':
         return get_available_lockers()
     elif 'assign' in path and http_method == 'POST':
         return assign_locker(event)
-    elif 'my-locker' in path: 
-        if http_method == 'GET':
-            return get_my_locker(event)
-        # --- LÓGICA NUEVA AQUÍ ---
-        elif 'refresh' in path and http_method == 'POST':
+    elif 'my-locker' in path:
+        # Sub-rutas de mi locker
+        if 'otp/refresh' in path and http_method == 'POST':
             return refresh_otp(event)
-        # -------------------------
+        elif 'request-cancel' in path and http_method == 'POST':
+            return request_cancel(event)
+        elif 'request-time-change' in path and http_method == 'POST':
+            return request_time_change(event)
+        elif http_method == 'GET':
+            return get_my_locker(event)
     
     return db_utils.format_response(404, {'message': 'Ruta lockers no encontrada'})
 
+# --- FUNCIONES AUXILIARES ---
 def generate_otp():
-    """Genera OTP de 6 dígitos"""
     otp = str(random.randint(100000, 999999))
     salt = os.urandom(16).hex()
     otp_hash = hashlib.sha256((otp + salt).encode('utf-8')).hexdigest()
     return otp, salt, otp_hash
 
-def refresh_otp(event):
-    """Genera nuevo OTP si el usuario tiene locker"""
+# --- LOGICA DE NEGOCIO ---
+
+def request_cancel(event):
+    """Libera el locker del usuario inmediatamente"""
     try:
         body = json.loads(event.get('body', '{}'))
         user_id = body.get('user_id')
-
         if not user_id: return db_utils.format_response(400, {'message': 'Falta user_id'})
 
-        otp_plain, salt, otp_hash = generate_otp()
-        
         conn = db_utils.get_db_connection()
         with conn.cursor() as cur:
+            # Verificar si tiene locker
             cur.execute("SELECT id FROM lockers WHERE current_user_id = %s", (user_id,))
             locker = cur.fetchone()
-            
             if not locker:
-                return db_utils.format_response(404, {'message': 'No tienes locker'})
+                return db_utils.format_response(404, {'message': 'No tienes locker para cancelar'})
 
+            # Liberar locker (Reset completo)
             sql = """
                 UPDATE lockers 
-                SET current_otp_hash=%s, otp_salt=%s, otp_valid_until=DATE_ADD(NOW(), INTERVAL 15 SECOND)
+                SET status='available', current_user_id=NULL, assigned_at=NULL, expires_at=NULL, 
+                    current_otp_hash=NULL, otp_salt=NULL, otp_valid_until=NULL, color_hex=NULL
                 WHERE id=%s
             """
-            cur.execute(sql, (otp_hash, salt, locker['id']))
+            cur.execute(sql, (locker['id'],))
             conn.commit()
 
-        return db_utils.format_response(200, {'otp': otp_plain})
-
+        return db_utils.format_response(200, {'message': 'Locker liberado exitosamente'})
     except Exception as e:
         logger.error(str(e))
         return db_utils.format_response(500, {'error': str(e)})
     finally:
         if 'conn' in locals(): conn.close()
 
-# ... (El resto de funciones get_available_lockers, assign_locker, get_my_locker se quedan igual) ...
+def request_time_change(event):
+    """Crea una solicitud en locker_requests"""
+    try:
+        body = json.loads(event.get('body', '{}'))
+        user_id = body.get('user_id')
+        days = body.get('days', 1)
+        
+        if not user_id: return db_utils.format_response(400, {'message': 'Falta user_id'})
+
+        conn = db_utils.get_db_connection()
+        with conn.cursor() as cur:
+            # Obtener el locker ID
+            cur.execute("SELECT id FROM lockers WHERE current_user_id = %s", (user_id,))
+            locker = cur.fetchone()
+            if not locker:
+                return db_utils.format_response(404, {'message': 'No tienes locker'})
+
+            # Insertar solicitud
+            sql = """
+                INSERT INTO locker_requests (locker_id, user_id, request_type, status, notes, created_at)
+                VALUES (%s, %s, 'change_time', 'pending', %s, NOW())
+            """
+            note = f"Solicitud de extensión por {days} días adicionales"
+            cur.execute(sql, (locker['id'], user_id, note))
+            conn.commit()
+
+        return db_utils.format_response(200, {'message': 'Solicitud enviada al administrador'})
+    except Exception as e:
+        logger.error(str(e))
+        return db_utils.format_response(500, {'error': str(e)})
+    finally:
+        if 'conn' in locals(): conn.close()
+
+# ... (Mantén aquí abajo las funciones get_available_lockers, assign_locker, get_my_locker, refresh_otp iguales que antes) ...
+# Para ahorrar espacio no las repito, pero NO LAS BORRES del archivo final.
+# Asegúrate de que `refresh_otp`, `get_available_lockers`, `assign_locker` y `get_my_locker` sigan en el archivo.
+# Solo agregaré refresh_otp aquí como referencia rápida, asegúrate de tener las demás.
+
+def refresh_otp(event):
+    try:
+        body = json.loads(event.get('body', '{}'))
+        user_id = body.get('user_id')
+        if not user_id: return db_utils.format_response(400, {'message': 'Falta user_id'})
+        otp_plain, salt, otp_hash = generate_otp()
+        conn = db_utils.get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM lockers WHERE current_user_id = %s", (user_id,))
+            locker = cur.fetchone()
+            if not locker: return db_utils.format_response(404, {'message': 'No tienes locker'})
+            sql = "UPDATE lockers SET current_otp_hash=%s, otp_salt=%s, otp_valid_until=DATE_ADD(NOW(), INTERVAL 15 SECOND) WHERE id=%s"
+            cur.execute(sql, (otp_hash, salt, locker['id']))
+            conn.commit()
+        return db_utils.format_response(200, {'otp': otp_plain})
+    except Exception as e:
+        return db_utils.format_response(500, {'error': str(e)})
+    finally:
+        if 'conn' in locals(): conn.close()
+
 def get_available_lockers():
     conn = db_utils.get_db_connection()
     try:
@@ -81,10 +142,8 @@ def get_available_lockers():
             cur.execute("SELECT id, code, status FROM lockers WHERE status = 'available'")
             lockers = cur.fetchall()
         return db_utils.format_response(200, lockers)
-    except Exception as e:
-        return db_utils.format_response(500, {'error': str(e)})
-    finally:
-        conn.close()
+    except Exception as e: return db_utils.format_response(500, {'error': str(e)})
+    finally: conn.close()
 
 def assign_locker(event):
     try:
@@ -93,45 +152,27 @@ def assign_locker(event):
         locker_id = body.get('locker_id')
         days = int(body.get('days', 1))
         color = body.get('color', '#000000')
-
-        if not user_id or not locker_id:
-            return db_utils.format_response(400, {'message': 'Faltan datos'})
-
+        if not user_id or not locker_id: return db_utils.format_response(400, {'message': 'Faltan datos'})
         conn = db_utils.get_db_connection()
         with conn.cursor() as cur:
             cur.execute("SELECT id FROM lockers WHERE current_user_id = %s", (user_id,))
-            if cur.fetchone():
-                return db_utils.format_response(409, {'message': 'Ya tienes locker'})
-
+            if cur.fetchone(): return db_utils.format_response(409, {'message': 'Ya tienes locker'})
             cur.execute("SELECT status FROM lockers WHERE id = %s", (locker_id,))
             locker = cur.fetchone()
-            if not locker or locker['status'] != 'available':
-                return db_utils.format_response(409, {'message': 'Locker no disponible'})
-
+            if not locker or locker['status'] != 'available': return db_utils.format_response(409, {'message': 'Locker no disponible'})
             otp_plain, salt, otp_hash = generate_otp()
-            sql = """
-                UPDATE lockers 
-                SET status='occupied', current_user_id=%s, assigned_at=NOW(), 
-                    expires_at=DATE_ADD(NOW(), INTERVAL %s DAY),
-                    current_otp_hash=%s, otp_salt=%s, 
-                    otp_valid_until=DATE_ADD(NOW(), INTERVAL 15 MINUTE), color_hex=%s
-                WHERE id=%s
-            """
+            sql = "UPDATE lockers SET status='occupied', current_user_id=%s, assigned_at=NOW(), expires_at=DATE_ADD(NOW(), INTERVAL %s DAY), current_otp_hash=%s, otp_salt=%s, otp_valid_until=DATE_ADD(NOW(), INTERVAL 15 MINUTE), color_hex=%s WHERE id=%s"
             cur.execute(sql, (user_id, days, otp_hash, salt, color, locker_id))
             conn.commit()
-
             return db_utils.format_response(200, {'message': 'Asignado', 'initial_otp': otp_plain})
-    except Exception as e:
-        return db_utils.format_response(500, {'error': str(e)})
-    finally:
-        if 'conn' in locals(): conn.close()
+    except Exception as e: return db_utils.format_response(500, {'error': str(e)})
+    finally: if 'conn' in locals(): conn.close()
 
 def get_my_locker(event):
     try:
         params = event.get('queryStringParameters', {}) or {}
         user_id = params.get('user_id')
         if not user_id: return db_utils.format_response(400, {'message': 'Falta user_id'})
-
         conn = db_utils.get_db_connection()
         with conn.cursor() as cur:
             sql = "SELECT id, code, status, expires_at, color_hex FROM lockers WHERE current_user_id = %s"
@@ -139,7 +180,5 @@ def get_my_locker(event):
             locker = cur.fetchone()
             if not locker: return db_utils.format_response(404, {'message': 'Sin locker'})
             return db_utils.format_response(200, locker)
-    except Exception as e:
-        return db_utils.format_response(500, {'error': str(e)})
-    finally:
-        if 'conn' in locals(): conn.close()
+    except Exception as e: return db_utils.format_response(500, {'error': str(e)})
+    finally: if 'conn' in locals(): conn.close()

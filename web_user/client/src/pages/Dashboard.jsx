@@ -114,31 +114,124 @@ const Dashboard = () => {
     navigate('/login', { replace: true });
   };
 
+  // --- NUEVAS FUNCIONES PARA PERFIL ---
+  const handleCancelLocker = async () => {
+    if (!hasLocker) return;
+    
+    // Confirmación simple
+    if (!window.confirm("¿Estás seguro de que quieres cancelar tu locker? Esta acción liberará el espacio inmediatamente.")) {
+      return;
+    }
+
+    try {
+        // TU TAREA: Asegurar que este endpoint exista en tu LambdaLockerUserService
+        const res = await axios.post(`${API_URL}/lockers/my-locker/request-cancel`, { user_id: user.id });
+        
+        if (res.status === 200) {
+            alert("Locker cancelado exitosamente.");
+            window.location.reload(); // Recargar para volver al selector
+        }
+    } catch (err) {
+        console.error(err);
+        alert("Error al cancelar: " + (err.response?.data?.message || "Revisa tu API"));
+    }
+  };
+
+  const handleExtendRequest = async () => {
+    if (!hasLocker) return;
+
+    // Por ahora usaremos un prompt simple, luego puedes hacer un modal si quieres
+    const dias = prompt("¿Cuántos días adicionales necesitas?", "1");
+    if (!dias) return;
+
+    try {
+        // TU TAREA: Asegurar que este endpoint exista en tu LambdaLockerUserService
+        const res = await axios.post(`${API_URL}/lockers/my-locker/request-time-change`, { 
+            user_id: user.id,
+            days: parseInt(dias) 
+        });
+        
+        if (res.status === 200) {
+            alert("Solicitud de tiempo enviada correctamente.");
+        }
+    } catch (err) {
+        console.error(err);
+        alert("Error al solicitar tiempo: " + (err.response?.data?.message || "Revisa tu API"));
+    }
+  };
+  // ------------------------------------
+
   const renderContent = () => {
     switch (currentView) {
         case 'profile':
             return (
-                <div className="flex flex-col items-center justify-center h-full text-center space-y-6 animate-fade-in">
-                    <div className="w-24 h-24 bg-locker-black-surface border border-locker-orange rounded-full flex items-center justify-center shadow-lg shadow-locker-orange/20">
-                        <User size={48} className="text-locker-orange" />
+                <div className="flex flex-col items-center justify-center h-full text-center space-y-8 animate-fade-in px-6">
+                    {/* AVATAR */}
+                    <div className="relative">
+                        <div className="w-28 h-28 bg-locker-black-surface border-2 border-locker-orange rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(255,107,0,0.2)]">
+                            <User size={56} className="text-locker-orange" />
+                        </div>
+                        {hasLocker && (
+                            <div className="absolute bottom-0 right-0 w-8 h-8 bg-green-500 rounded-full border-4 border-locker-black flex items-center justify-center" title="Locker Activo">
+                                <Key size={14} className="text-black" />
+                            </div>
+                        )}
                     </div>
-                    <div>
-                        {/* DATOS REALES DEL USUARIO */}
-                        <h2 className="text-2xl font-bold text-white">{user.name}</h2>
-                        <p className="text-gray-500">{user.email}</p>
+
+                    {/* DATOS DEL USUARIO */}
+                    <div className="space-y-1">
+                        <h2 className="text-3xl font-bold text-white tracking-tight">{user.name}</h2>
+                        <p className="text-gray-500 font-mono text-sm">{user.email}</p>
                     </div>
-                    <div className="p-4 bg-locker-black-surface rounded-lg border border-locker-black-border max-w-xs w-full">
-                        <div className="flex justify-between items-center mb-2 border-b border-gray-800 pb-2">
+
+                    {/* TARJETA DE ESTADO */}
+                    <div className="p-6 bg-locker-black-surface rounded-2xl border border-locker-black-border w-full max-w-sm space-y-4">
+                        <div className="flex justify-between items-center border-b border-gray-800 pb-3">
                             <span className="text-sm text-gray-400">ID de Usuario</span>
-                            <span className="text-sm font-mono text-white">{user.id}</span>
+                            <span className="text-sm font-mono text-white bg-white/5 px-2 py-1 rounded">{user.id}</span>
                         </div>
                         <div className="flex justify-between items-center">
-                            <span className="text-sm text-gray-400">Estado</span>
-                            <span className={`text-sm font-bold ${hasLocker ? 'text-green-500' : 'text-gray-500'}`}>
-                                {hasLocker ? 'Locker Activo' : 'Sin Locker'}
+                            <span className="text-sm text-gray-400">Estado del Servicio</span>
+                            <span className={`text-xs font-bold px-3 py-1 rounded-full ${hasLocker ? 'bg-green-500/10 text-green-500' : 'bg-gray-700/30 text-gray-400'}`}>
+                                {hasLocker ? 'ACTIVO' : 'INACTIVO'}
                             </span>
                         </div>
+                        
+                        {/* INFORMACIÓN DEL LOCKER (SI TIENE) */}
+                        {hasLocker && myLockerData && (
+                            <div className="mt-4 pt-4 border-t border-gray-800">
+                                <div className="flex justify-between text-sm mb-2">
+                                    <span className="text-gray-400">Locker Actual</span>
+                                    <span className="text-locker-orange font-bold">{myLockerData.code}</span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-gray-400">Vence</span>
+                                    <span className="text-white">{new Date(myLockerData.expires_at).toLocaleDateString()}</span>
+                                </div>
+                            </div>
+                        )}
                     </div>
+
+                    {/* BOTONES DE ACCIÓN (SOLO SI TIENE LOCKER) */}
+                    {hasLocker && (
+                        <div className="flex flex-col w-full max-w-sm gap-3">
+                            <button 
+                                onClick={handleExtendRequest}
+                                className="w-full py-3 rounded-xl border border-locker-orange text-locker-orange hover:bg-locker-orange hover:text-white transition-all font-medium flex items-center justify-center gap-2"
+                            >
+                                <RefreshCw size={18} />
+                                Solicitar Más Tiempo
+                            </button>
+                            
+                            <button 
+                                onClick={handleCancelLocker}
+                                className="w-full py-3 rounded-xl bg-red-900/10 border border-red-900/50 text-red-500 hover:bg-red-900/30 transition-all font-medium flex items-center justify-center gap-2"
+                            >
+                                <LogOut size={18} className="rotate-180" />
+                                Cancelar / Liberar Locker
+                            </button>
+                        </div>
+                    )}
                 </div>
             );
 
