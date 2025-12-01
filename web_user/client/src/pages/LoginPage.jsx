@@ -4,7 +4,7 @@ import { Lock, Mail, User, ShieldCheck } from 'lucide-react';
 import axios from 'axios';
 
 // URL de tu API Gateway (Ajústala con la de tu lista maestra)
-const API_URL = "https://ogr7f6hfxd.execute-api.us-east-2.amazonaws.com/dev"; 
+const API_URL = "https://ogr7f6hfxd.execute-api.us-east-2.amazonaws.com/prod"; 
 
 const LoginPage = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -45,17 +45,17 @@ const LoginPage = () => {
         // Guardar token y rol (Simulado por ahora con la respuesta de la API)
         const userData = response.data.user || {};
         localStorage.setItem('token', response.data.token);
+        localStorage.setItem('userName', userData.name);
+        localStorage.setItem('userEmail', userData.email);
+        localStorage.setItem('userId', userData.id); // ¡CRUCIAL PARA EL OTP!
         localStorage.setItem('role', userData.role);
         
-        // Protección: Reemplazar historial para no volver atrás
-        if (userData.role === 'user') {
-            navigate('/dashboard', { replace: true });
-        } else {
-            alert("Este portal es solo para usuarios. Usa el portal de Admin.");
-        }
+        
+        navigate('/dashboard', { replace: true });
       }
     } catch (err) {
-      setError(err.response?.data?.message || "Error de conexión");
+      const msg = err.response?.data?.message || "Error de conexión";
+      setError(msg);
     }
   };
 
