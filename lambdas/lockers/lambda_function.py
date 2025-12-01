@@ -148,6 +148,70 @@ def get_available_lockers():
     finally: conn.close()
 
 def assign_locker(event):
+    conn = None
+    try:
+        body = json.loads(event.get('body', '{}'))
+        logger.info(f"Intento de asignación: {body}") # Log para debug
+
+        user_id = body.get('user_id')
+        locker_id = body.get('locker_id')
+        days = int(body.get('days', 1))
+        color = body.get('color', '#000000')
+
+        if not user_id or not locker_id:
+            return db_utils.format_response(400, {'message': 'Faltan datos (user_id o locker_id)'})
+
+        conn = db_utils.get_db_connection()
+        with conn.cursor() as cur:
+            # 1. Verificar si el usuario YA tiene locker
+            cur.execute("SELECT id FROM lockers WHERE current_user_id = %s", (user_id,))
+            if cur.fetchone():
+                return db_utils.format_response(409, {'message': 'El usuario ya tiene un locker asignado'})
+
+            # 2. Verificar disponibilidad del locker
+            cur.execute("SELECT status FROM lockers WHERE id = %s", (locker_id,))
+            locker = cur.fetchone()
+            
+            if not locker:
+                return db_utils.format_response(404, {'message': 'Locker no encontrado'})
+            
+            if locker['status'] != 'available':
+                return db_utils.format_response(409, {'message': 'Locker no disponible (ya ocupado)'})
+
+            # 3. Generar OTP y Asignar
+            otp_plain, salt, otp_hash = generate_otp()
+            
+            # Query simplificada para evitar errores de sintaxis
+            sql = """
+                UPDATE lockers 
+                SET status='occupied', 
+                    current_user_id=%s, 
+                    assigned_at=NOW(), 
+                    expires_at=DATE_ADD(NOW(), INTERVAL %s DAY),
+                    current_otp_hash=%s, 
+                    otp_salt=%s, 
+                    otp_valid_until=DATE_ADD(NOW(), INTERVAL 15 MINUTE), 
+                    color_hex=%s
+                WHERE id=%s
+            """
+            # Orden de parámetros CRUCIAL: user_id, days, hash, salt, color, locker_id
+            params = (user_id, days, otp_hash, salt, color, locker_id)
+            
+            cur.execute(sql, params)
+            conn.commit()
+            
+            logger.info(f"Locker {locker_id} asignado a usuario {user_id}")
+
+            return db_utils.format_response(200, {
+                'message': 'Locker asignado correctamente', 
+                'initial_otp': otp_plain
+            })
+
+    except Exception as e:
+        logger.error(f"Error en assign_locker: {str(e)}")
+        return db_utils.format_response(500, {'error': str(e)})
+    finally:
+        if conn: conn.close()
     try:
         body = json.loads(event.get('body', '{}'))
         user_id = body.get('user_id')
