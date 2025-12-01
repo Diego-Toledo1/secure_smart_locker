@@ -77,3 +77,16 @@ CREATE TABLE IF NOT EXISTS locker_requests (
     ON UPDATE CASCADE
     ON DELETE CASCADE
 ) ENGINE=InnoDB;
+
+-- POBLADO INICIAL DE LOCKERS (SEEDING)
+-- Usamos INSERT IGNORE para que no falle si ya existen (por la restricción UNIQUE del código)
+
+INSERT IGNORE INTO lockers (code, status, created_at) VALUES 
+('A1', 'available', NOW()),
+('A2', 'available', NOW()),
+('A3', 'available', NOW()),
+('B1', 'available', NOW()),
+('B2', 'available', NOW()),
+('B3', 'available', NOW()),
+('C1', 'available', NOW()),
+('C2', 'available', NOW());
