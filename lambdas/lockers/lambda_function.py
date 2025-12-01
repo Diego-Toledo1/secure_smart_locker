@@ -18,13 +18,12 @@ def lambda_handler(event, context):
     if http_method == 'OPTIONS':
         return db_utils.format_response(200, {})
 
-    # Rutas existentes
     if 'available' in path and http_method == 'GET':
         return get_available_lockers()
     elif 'assign' in path and http_method == 'POST':
         return assign_locker(event)
-    elif 'my-locker' in path:
-        # Sub-rutas de mi locker
+    elif 'my-locker' in path: 
+        # Sub-rutas
         if 'otp/refresh' in path and http_method == 'POST':
             return refresh_otp(event)
         elif 'request-cancel' in path and http_method == 'POST':
@@ -36,7 +35,7 @@ def lambda_handler(event, context):
     
     return db_utils.format_response(404, {'message': 'Ruta lockers no encontrada'})
 
-# --- FUNCIONES AUXILIARES ---
+# --- AUXILIARES ---
 def generate_otp():
     otp = str(random.randint(100000, 999999))
     salt = os.urandom(16).hex()
@@ -109,11 +108,6 @@ def request_time_change(event):
         return db_utils.format_response(500, {'error': str(e)})
     finally:
         if 'conn' in locals(): conn.close()
-
-# ... (Mantén aquí abajo las funciones get_available_lockers, assign_locker, get_my_locker, refresh_otp iguales que antes) ...
-# Para ahorrar espacio no las repito, pero NO LAS BORRES del archivo final.
-# Asegúrate de que `refresh_otp`, `get_available_lockers`, `assign_locker` y `get_my_locker` sigan en el archivo.
-# Solo agregaré refresh_otp aquí como referencia rápida, asegúrate de tener las demás.
 
 def refresh_otp(event):
     try:
